@@ -436,7 +436,7 @@
         const SLOTS = [
             { id: '1-2', label: 'P1-2', periods: [1, 2] },
             { id: '3-4', label: 'P3-4', periods: [3, 4] },
-            { id: '7-8', label: 'P7-8', periods: [7, 8] }
+            { id: '6-7', label: 'P6-7', periods: [6, 7, 8, 9] }
         ];
 
         function getActivityType(name) {
@@ -453,7 +453,7 @@
         function getSlotForPeriod(period) {
             if (period <= 2) return '1-2';
             if (period <= 4) return '3-4';
-            return '7-8';
+            return '6-7';
         }
 
         let processedTeachers = [];
