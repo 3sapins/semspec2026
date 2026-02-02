@@ -253,8 +253,9 @@
             padding: 0.4rem;
             border: 1px solid var(--border);
             vertical-align: top;
-            min-height: 60px;
-            height: 60px;
+            min-height: 80px;
+            height: 80px;
+            min-width: 100px;
         }
 
         .schedule-table .period-col {
@@ -320,6 +321,12 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .activity-periods {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            font-weight: 600;
         }
 
         .activity-room {
@@ -532,17 +539,18 @@
             'mardi': 'Mar 12'
         };
         
-        const PERIODS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        const PERIODS = ['1-2', '3-4', '5-6', '7-8'];
+        const PERIOD_LABELS = {
+            '1-2': 'P1-2',
+            '3-4': 'P3-4',
+            '5-6': 'P5-6',
+            '7-8': 'P7-8'
+        };
         const PERIOD_TIMES = {
-            '1': '08:25-09:10',
-            '2': '09:15-10:00',
-            '3': '10:20-11:05',
-            '4': '11:10-11:55',
-            '5': '12:00-12:45',
-            '6': '13:50-14:35',
-            '7': '14:40-15:25',
-            '8': '15:30-16:15',
-            '9': '16:20-17:05'
+            '1-2': '08:25-10:00',
+            '3-4': '10:20-11:55',
+            '5-6': '12:00-14:35',
+            '7-8': '14:40-16:15'
         };
 
         // Activity type detection
@@ -623,7 +631,7 @@
         }
 
         function renderTeacherCard(teacher) {
-            // Build schedule grid
+            // Build schedule grid with grouped slots
             const schedule = {};
             DAYS.forEach(day => {
                 schedule[day] = {};
@@ -632,47 +640,72 @@
                 });
             });
             
-            // Fill schedule
+            // Helper to determine which slot a period belongs to
+            function getSlot(period) {
+                const p = parseInt(period);
+                if (p <= 2) return '1-2';
+                if (p <= 4) return '3-4';
+                if (p <= 6) return '5-6';
+                return '7-8';
+            }
+            
+            // Fill schedule - group activities by slot
+            const activityBySlot = {};
             teacher.activities.forEach(act => {
                 const day = act.day;
                 if (!schedule[day]) return;
                 
+                // Determine which slots this activity spans
+                const startSlot = getSlot(act.periodFrom);
+                const endSlot = getSlot(act.periodTo);
+                
+                // Create unique key for this activity in this day
+                const actKey = `${day}-${act.name}`;
+                
+                // Add to relevant slots (avoid duplicates)
+                const slots = new Set();
                 for (let p = act.periodFrom; p <= act.periodTo; p++) {
-                    if (schedule[day][p]) {
-                        schedule[day][p].push(act);
-                    }
+                    slots.add(getSlot(p));
                 }
+                
+                slots.forEach(slot => {
+                    // Check if already added
+                    const existing = schedule[day][slot].find(a => a.name === act.name);
+                    if (!existing) {
+                        schedule[day][slot].push({
+                            ...act,
+                            displayPeriods: `P${act.periodFrom}-${act.periodTo}`
+                        });
+                    }
+                });
             });
             
             // Count activities
-            const totalActivities = teacher.activities.length;
             const uniqueActivities = new Set(teacher.activities.map(a => a.name)).size;
             
             // Generate table HTML
-            let tableHtml = '<table class="schedule-table"><thead><tr><th>P</th>';
+            let tableHtml = '<table class="schedule-table"><thead><tr><th></th>';
             DAYS.forEach(day => {
                 tableHtml += `<th>${DAY_LABELS[day]}</th>`;
             });
             tableHtml += '</tr></thead><tbody>';
             
-            // Only show periods 1-8 (most common)
-            const displayPeriods = ['1', '2', '3', '4', '5', '6', '7', '8'];
-            
-            displayPeriods.forEach(period => {
-                tableHtml += `<tr><td class="period-col">P${period}</td>`;
+            PERIODS.forEach(period => {
+                tableHtml += `<tr><td class="period-col">${PERIOD_LABELS[period]}<br><span style="font-size:0.65rem;color:#999;">${PERIOD_TIMES[period]}</span></td>`;
                 
                 DAYS.forEach(day => {
                     const activities = schedule[day][period] || [];
                     let cellContent = '';
                     
                     activities.forEach(act => {
-                        const shortName = act.name.length > 25 ? act.name.substring(0, 22) + '...' : act.name;
+                        const shortName = act.name.length > 20 ? act.name.substring(0, 18) + '...' : act.name;
                         cellContent += `
                             <div class="activity-cell ${act.type}" 
                                  data-name="${escapeHtml(act.name)}"
                                  data-room="${escapeHtml(act.room)}"
-                                 data-periods="P${act.periodFrom}-${act.periodTo}">
+                                 data-periods="${act.displayPeriods}">
                                 <div class="activity-name">${escapeHtml(shortName)}</div>
+                                <div class="activity-periods">${act.displayPeriods}</div>
                                 ${act.room && act.room !== 'EXT' && act.room !== 'SDM' ? `<div class="activity-room">📍 ${escapeHtml(act.room)}</div>` : ''}
                             </div>
                         `;
@@ -718,13 +751,20 @@
                 const dayActivities = byDay[day];
                 if (dayActivities.length === 0) return;
                 
-                // Sort by period
+                // Sort by period and remove duplicates
                 dayActivities.sort((a, b) => a.periodFrom - b.periodFrom);
+                const seen = new Set();
+                const uniqueActivities = dayActivities.filter(act => {
+                    const key = act.name;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
                 
                 activitiesHtml += `<div style="margin-bottom: 0.75rem;">
                     <strong>${DAY_LABELS[day]}</strong><br>`;
                 
-                dayActivities.forEach(act => {
+                uniqueActivities.forEach(act => {
                     activitiesHtml += `<span class="activity-cell ${act.type}" style="display: inline-block; margin: 2px;">
                         P${act.periodFrom}-${act.periodTo}: ${escapeHtml(act.name)}
                         ${act.room ? `(${escapeHtml(act.room)})` : ''}
